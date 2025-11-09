@@ -1,9 +1,8 @@
 {
-      "name": "Modern Wellness Mobile App (Copia)",
+      "name": "Modern Wellness Mobile App",
       "version": "0.1.0",
       "private": true,
       "dependencies": {
-            "@jsr/supabase__supabase-js": "^2.49.8",
             "@radix-ui/react-accordion": "^1.2.3",
             "@radix-ui/react-alert-dialog": "^1.1.6",
             "@radix-ui/react-aspect-ratio": "^1.1.2",
@@ -30,7 +29,7 @@
             "@radix-ui/react-toggle": "^1.1.2",
             "@radix-ui/react-toggle-group": "^1.1.2",
             "@radix-ui/react-tooltip": "^1.1.8",
-            "@supabase/supabase-js": "*",
+            "@supabase/supabase-js": "^2.49.8",
             "class-variance-authority": "^0.7.1",
             "clsx": "*",
             "cmdk": "^1.1.1",
@@ -52,10 +51,8 @@
       },
       "devDependencies": {
             "@types/node": "^20.10.0",
-            "@types/react": "^19.2.2",
-            "@types/react-dom": "^19.2.2",
             "@vitejs/plugin-react-swc": "^3.10.2",
-            "vite": "6.3.5"
+            "vite": "^6.3.5"
       },
       "scripts": {
             "dev": "vite",
