@@ -1,14 +1,14 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from "react";
+import React, { createContext, useContext, useState, useEffect, ReactNode } from "react";
 import { requestNotificationPermission, showNotification } from "../utils/pwa";
 
-// Comandos para el Arduino
+// Arduino BLE Commands
 export const LED_COMMANDS = {
-  OFF: 0,           // Apagar
-  WATER: 1,         // Azul - necesita agua
-  BALANCED: 2,      // Verde - comida balanceada
-  UNBALANCED: 3,    // Naranja - comida NO balanceada
-  GREAT_FINISH: 4,  // Amarillo - gran final (>=80%)
-  BAD_FINISH: 5,    // Naranja titilante - mal final (<80%)
+  OFF: 0,
+  WATER: 1,
+  BALANCED: 2,
+  UNBALANCED: 3,
+  GREAT_FINISH: 4,
+  BAD_FINISH: 5,
 } as const;
 
 type LEDCommand = typeof LED_COMMANDS[keyof typeof LED_COMMANDS];
@@ -26,15 +26,11 @@ interface BluetoothContextType {
 
 const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
 
-// Service UUID para el Arduino Nano 33 BLE
-// Este UUID debe coincidir con el definido en el sketch de Arduino
+// Arduino Nado BLE UUIDs
 const ARDUINO_SERVICE_UUID = "19b10000-e8f2-537e-4f6c-d104768a1214";
 const ARDUINO_CHARACTERISTIC_UUID = "19b10001-e8f2-537e-4f6c-d104768a1214";
 
 export function BluetoothProvider({ children }: { children: ReactNode }) {
-  // Use `any` for these runtime-only Web Bluetooth objects to avoid TypeScript
-  // errors in environments without DOM Web Bluetooth typings while keeping
-  // runtime behavior unchanged.
   const [device, setDevice] = useState<any | null>(null);
   const [characteristic, setCharacteristic] = useState<any | null>(null);
   const [isConnected, setIsConnected] = useState(false);
@@ -43,31 +39,25 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [lastCommand, setLastCommand] = useState<LEDCommand | null>(null);
 
-  // Verificar si Web Bluetooth API está disponible
   useEffect(() => {
-    // Use a safe runtime check via `navigator` cast to any so TypeScript won't
-    // complain about missing `bluetooth` on Navigator in some configs.
     if (!(navigator as any).bluetooth) {
       setError("Bluetooth no está disponible en este navegador. Usa Chrome, Edge o Opera.");
       console.error("Web Bluetooth API no disponible");
     }
   }, []);
 
-  // Guardar conexión en localStorage
   useEffect(() => {
     if (isConnected && deviceName) {
       localStorage.setItem("lumi_bluetooth_device", deviceName);
     }
   }, [isConnected, deviceName]);
 
-  // Manejar desconexión del dispositivo
   const handleDisconnect = () => {
     console.log("Dispositivo Bluetooth desconectado");
     setIsConnected(false);
     setCharacteristic(null);
     setDeviceName(null);
     setError("Dispositivo desconectado");
-    // Notify the user that the device disconnected
     try {
       showNotification("Lumi desconectado", {
         body: "Se perdió la conexión con tu dispositivo Lumi.",
@@ -84,10 +74,8 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    // Verificar si estamos en contexto seguro (HTTPS o localhost)
     if (!window.isSecureContext) {
       setError("Bluetooth requiere HTTPS. Por favor, accede a la app mediante HTTPS.");
-      console.error("Bluetooth requiere contexto seguro (HTTPS)");
       return;
     }
 
@@ -95,79 +83,67 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
     setError(null);
 
     try {
-      // Try to request notification permission so we can notify the user about
-      // connection/disconnection/errors and hydration alerts.
-      try {
-        await requestNotificationPermission();
-      } catch (e) {
-        console.debug("Notification permission request failed:", e);
-      }
+      await requestNotificationPermission().catch(console.debug);
 
-      console.log("Solicitando dispositivo Bluetooth...");
-
-      // Solicitar dispositivo con el servicio específico. Cast navigator to
-      // any to call `requestDevice` without TypeScript complaining in
-      // environments missing Web Bluetooth types.
+      console.log("Buscando dispositivo Arduino Nado...");
+      
+      // Request BLE device with specific service UUID
       const selectedDevice = await (navigator as any).bluetooth.requestDevice({
         filters: [
-          { namePrefix: "Arduino" },
-          { namePrefix: "Nano" },
           { services: [ARDUINO_SERVICE_UUID] }
         ],
-        optionalServices: [ARDUINO_SERVICE_UUID]
+        optionalServices: []
       });
 
-      console.log("Dispositivo seleccionado:", selectedDevice.name);
+      console.log("Dispositivo encontrado:", selectedDevice.name);
       setDevice(selectedDevice);
-      setDeviceName(selectedDevice.name || "Arduino Nano");
+      setDeviceName(selectedDevice.name || "Arduino Nado");
 
-      // Escuchar evento de desconexión
-  // selectedDevice is a runtime BluetoothDevice - attach event listener
-  // directly. Keep as-is at runtime; types are `any` above.
-  selectedDevice.addEventListener("gattserverdisconnected", handleDisconnect);
+      selectedDevice.addEventListener("gattserverdisconnected", handleDisconnect);
 
-      // Conectar al servidor GATT
-  console.log("Conectando al servidor GATT...");
-  const server = await selectedDevice.gatt?.connect();
+      console.log("Conectando al servidor GATT...");
+      const server = await selectedDevice.gatt?.connect();
       
-      if (!server) {
-        throw new Error("No se pudo conectar al servidor GATT");
+      if (!server) throw new Error("No se pudo conectar al servidor GATT");
+
+      // Get the BLE service
+      const service = await server.getPrimaryService(ARDUINO_SERVICE_UUID);
+      if (!service) throw new Error("No se encontró el servicio BLE");
+
+      // Get the characteristic for sending commands
+      const char = await service.getCharacteristic(ARDUINO_CHARACTERISTIC_UUID);
+      if (!char) throw new Error("No se encontró la característica BLE");
+
+      // Enable notifications if the characteristic supports it
+      if (char.properties.notify) {
+        await char.startNotifications();
+        char.addEventListener('characteristicvaluechanged', (event: any) => {
+          const value = event.target.value;
+          if (value) {
+            console.log('Received value from Arduino:', new Uint8Array(value.buffer));
+          }
+        });
       }
-
-      console.log("Servidor GATT conectado");
-
-      // Obtener el servicio
-  console.log("Obteniendo servicio primario...");
-  const service = await server.getPrimaryService(ARDUINO_SERVICE_UUID);
-  console.log("Servicio obtenido");
-
-  // Obtener la característica
-  console.log("Obteniendo característica...");
-  const char = await service.getCharacteristic(ARDUINO_CHARACTERISTIC_UUID);
-  console.log("Característica obtenida");
 
       setCharacteristic(char);
       setIsConnected(true);
       setError(null);
 
-      // Notify user that device connected
       try {
         showNotification("Lumi conectado", {
-          body: `Conectado a ${selectedDevice.name || "Arduino Nano"}`,
+          body: `Conectado a ${selectedDevice.name || "Arduino Nado"}`,
           tag: "bluetooth-connection",
         });
       } catch (e) {
         console.debug("Notification failed:", e);
       }
 
-      // Enviar comando de apagado inicial
+      // Send initial OFF command
       await sendCommandInternal(char, LED_COMMANDS.OFF);
       
-      console.log("Conexión Bluetooth exitosa");
     } catch (err) {
       console.error("Error de conexión Bluetooth:", err);
       
-      // Manejar diferentes tipos de errores
       let errorMessage = "Error al conectar";
       
       if (err instanceof DOMException) {
@@ -176,7 +152,7 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
             errorMessage = "Bluetooth bloqueado por política de seguridad. Verifica que estés usando HTTPS y que los permisos estén habilitados.";
             break;
           case 'NotFoundError':
-            errorMessage = "No se encontró ningún dispositivo Arduino. Asegúrate de que esté encendido y cerca.";
+            errorMessage = "No se encontró ningún dispositivo Arduino Nado. Asegúrate de que esté encendido y cerca.";
             break;
           case 'NotAllowedError':
             errorMessage = "Permiso denegado. Por favor, permite el acceso a Bluetooth.";
@@ -191,7 +167,7 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       setError(errorMessage);
       setIsConnected(false);
       setCharacteristic(null);
-      // Notify about the error
+      
       try {
         showNotification("Error Bluetooth", {
           body: errorMessage,
@@ -221,12 +197,12 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
 
   const sendCommandInternal = async (char: any, command: LEDCommand) => {
     try {
-      // Enviar comando como un byte
+      // Send command as a single byte using BLE write
       const data = new Uint8Array([command]);
       await char.writeValue(data);
-      console.log(`Comando enviado al Arduino: ${command}`);
+      console.log(`Comando BLE enviado: ${command}`);
       setLastCommand(command);
-      // If the device indicates a water alert, show a hydration notification
+      
       if (command === LED_COMMANDS.WATER) {
         try {
           showNotification("Hora de hidratarte", {
@@ -240,7 +216,7 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       }
       return true;
     } catch (err) {
-      console.error("Error al enviar comando:", err);
+      console.error("Error al enviar comando BLE:", err);
       throw err;
     }
   };

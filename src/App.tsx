@@ -1,5 +1,6 @@
+import React from 'react';
 import { useState, useEffect } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import { motion, AnimatePresence } from 'framer-motion';
 import { AuthScreen } from "./pages/AuthScreen";
 import { OnboardingFlow } from "./pages/OnboardingFlow";
 import { ProfileSetupScreen } from "./pages/ProfileSetupScreen";
@@ -14,6 +15,7 @@ import { BluetoothProvider } from "./contexts/BluetoothContext";
 import { registerServiceWorker, initPWAInstallPrompt } from "./utils/pwa";
 
 type Screen = "auth" | "onboarding" | "profile" | "bluetooth" | "dashboard" | "nutrition" | "userprofile" | "hydration-alert";
+type MainTab = "dashboard" | "nutrition" | "userprofile";
 
 function AppContent() {
   const { userId, setAuth, profile } = useUser();
@@ -25,9 +27,9 @@ function AppContent() {
     }
     return "auth";
   });
-  const [mainTab, setMainTab] = useState<"dashboard" | "nutrition" | "userprofile">(() => {
+  const [mainTab, setMainTab] = useState<MainTab>(() => {
     const saved = localStorage.getItem("lumi_main_tab");
-    return (saved as "dashboard" | "nutrition" | "userprofile") || "dashboard";
+    return (saved as MainTab) || "dashboard";
   });
   const [showHydrationAlert, setShowHydrationAlert] = useState(false);
 
@@ -104,7 +106,7 @@ function AppContent() {
     setCurrentScreen(nextScreen);
   };
 
-  const handleTabChange = (tab: "dashboard" | "nutrition" | "insights") => {
+  const handleTabChange = (tab: MainTab) => {
     setMainTab(tab);
   };
 
@@ -215,9 +217,9 @@ function AppContent() {
             initial={{ y: 100, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             transition={{ delay: 0.5, type: "spring" }}
-            className="absolute bottom-0 left-0 right-0 bg-white/80 backdrop-blur-xl border-t border-gray-200 px-6 py-3 pb-8 safe-area-pb z-50"
+            className="fixed bottom-0 left-0 right-0 z-50 nav-container bg-white/80 backdrop-blur-xl border-t border-gray-200"
           >
-            <div className="flex items-center justify-around max-w-md mx-auto">
+            <div className="flex items-center justify-around max-w-md mx-auto px-6 py-3">
               {/* Dashboard tab */}
               <motion.button
                 onClick={() => handleTabChange("dashboard")}
