@@ -1,10 +1,11 @@
 import { motion } from "motion/react";
-import { Droplet, Sun, Flower2, Plus, Flame } from "lucide-react";
+import { Droplet, Sun, Flower2, Plus, Flame, Bluetooth, Check, X } from "lucide-react";
 import { useUser } from "../contexts/UserContext";
 import { Button } from "../components/ui/button";
 import { useState, useEffect } from "react";
 import { logUserEvent } from "../utils/analytics";
 import { useArduinoAlarms } from "../utils/useArduinoAlarms";
+import { useBluetooth } from "../contexts/BluetoothContext";
 
 export function DashboardScreen() {
   const { nutritionalNeeds, waterGlasses, addWater, getTotalIntake, mealIntakes, streakData, userName, userId, accessToken, profile } = useUser();
@@ -123,6 +124,8 @@ export function DashboardScreen() {
     return proteinOk && fiberOk;
   }).length;
 
+  const { isConnected, deviceName } = useBluetooth();
+
   return (
     <div className="relative h-full bg-gradient-to-br from-blue-50 via-yellow-50 to-green-50 overflow-y-auto pb-24">
       <div className="p-6">
@@ -140,9 +143,18 @@ export function DashboardScreen() {
         />
 
         {/* Header */}
-        <div className="mb-6">
-          <p className="text-sm text-gray-500">Balance de hoy</p>
-          <h2 className="text-gray-800">{lumiStatus.message}</h2>
+        <div className="mb-6 flex items-center justify-between">
+          <div>
+            <p className="text-sm text-gray-500">Balance de hoy</p>
+            <h2 className="text-gray-800">{lumiStatus.message}</h2>
+          </div>
+          {/* Bluetooth status chip */}
+          <div className="flex items-center gap-2">
+            <div className={`px-3 py-1 rounded-full text-xs font-medium flex items-center gap-2 shadow ${isConnected ? 'bg-green-50 text-green-800 border border-green-100' : 'bg-gray-50 text-gray-700 border border-gray-100'}`}>
+              {isConnected ? <Check className="w-4 h-4 text-green-600" /> : <Bluetooth className="w-4 h-4 text-gray-500" />}
+              <span>{isConnected ? `Conectado: ${deviceName || 'Lumi'}` : 'Sin conexión'}</span>
+            </div>
+          </div>
         </div>
 
         {/* Central Lumi ring - real-time color */}
