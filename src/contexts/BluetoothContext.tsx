@@ -31,13 +31,14 @@ const ARDUINO_SERVICE_UUID = "19b10000-e8f2-537e-4f6c-d104768a1214";
 const ARDUINO_CHARACTERISTIC_UUID = "19b10001-e8f2-537e-4f6c-d104768a1214";
 
 export function BluetoothProvider({ children }: { children: ReactNode }) {
-  const [device, setDevice] = useState<any | null>(null);
-  const [characteristic, setCharacteristic] = useState<any | null>(null);
+  const [device, setDevice] = useState<BluetoothDevice | null>(null);
+  const [characteristic, setCharacteristic] = useState<BluetoothRemoteGATTCharacteristic | null>(null);
   const [isConnected, setIsConnected] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
   const [deviceName, setDeviceName] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastCommand, setLastCommand] = useState<LEDCommand | null>(null);
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
 
   useEffect(() => {
     if (!(navigator as any).bluetooth) {
@@ -86,24 +87,53 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       await requestNotificationPermission().catch(console.debug);
 
       console.log("Buscando dispositivo Arduino Nado...");
-      
-      // Request BLE device with specific service UUID
-      const selectedDevice = await (navigator as any).bluetooth.requestDevice({
-        filters: [
-          { services: [ARDUINO_SERVICE_UUID] }
-        ],
-        optionalServices: []
-      });
+      // First try: request devices that advertise the Arduino service
+      let selectedDevice: BluetoothDevice | undefined;
+      try {
+        selectedDevice = await (navigator as any).bluetooth.requestDevice({
+          filters: [{ services: [ARDUINO_SERVICE_UUID] }],
+          optionalServices: [ARDUINO_SERVICE_UUID],
+        });
+      } catch (e) {
+        // On some mobile browsers or device setups the filtered request may fail to find devices.
+        // Fall back to a more permissive request but still ask for the service in optionalServices.
+        console.debug("Filtered request failed, falling back to acceptAllDevices if allowed:", e);
+        selectedDevice = await (navigator as any).bluetooth.requestDevice({
+          acceptAllDevices: true,
+          optionalServices: [ARDUINO_SERVICE_UUID],
+        });
+      }
 
       console.log("Dispositivo encontrado:", selectedDevice.name);
-      setDevice(selectedDevice);
+      if (!selectedDevice) throw new Error("No se seleccionó ningún dispositivo");
+
+      setDevice(selectedDevice as BluetoothDevice);
       setDeviceName(selectedDevice.name || "Arduino Nado");
 
-      selectedDevice.addEventListener("gattserverdisconnected", handleDisconnect);
+      selectedDevice.addEventListener("gattserverdisconnected", async () => {
+        console.log("Dispositivo GATT desconectado, manejador de evento activado");
+        setIsConnected(false);
+        setCharacteristic(null);
+        // Try to auto-reconnect a few times
+        if (reconnectAttempts < 3) {
+          const attempt = reconnectAttempts + 1;
+          setReconnectAttempts(attempt);
+          const backoff = 1000 * attempt;
+          console.log(`Intentando reconectar en ${backoff}ms (intento ${attempt})`);
+          setTimeout(async () => {
+            try {
+              await connect();
+            } catch (err) {
+              console.debug("Reconnect failed:", err);
+            }
+          }, backoff);
+        } else {
+          handleDisconnect();
+        }
+      });
 
       console.log("Conectando al servidor GATT...");
       const server = await selectedDevice.gatt?.connect();
-      
       if (!server) throw new Error("No se pudo conectar al servidor GATT");
 
       // Get the BLE service
@@ -117,10 +147,10 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       // Enable notifications if the characteristic supports it
       if (char.properties.notify) {
         await char.startNotifications();
-        char.addEventListener('characteristicvaluechanged', (event: any) => {
-          const value = event.target.value;
-          if (value) {
-            console.log('Received value from Arduino:', new Uint8Array(value.buffer));
+        char.addEventListener('characteristicvaluechanged', (event: Event) => {
+          const val = (event.target as BluetoothRemoteGATTCharacteristic).value;
+          if (val) {
+            console.log('Received value from Arduino:', new Uint8Array(val.buffer));
           }
         });
       }
@@ -144,7 +174,7 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
     } catch (err) {
       console.error("Error de conexión Bluetooth:", err);
       
-      let errorMessage = "Error al conectar";
+  let errorMessage = "Error al conectar";
       
       if (err instanceof DOMException) {
         switch (err.name) {
@@ -183,10 +213,14 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
 
   const disconnect = () => {
     if (device?.gatt?.connected) {
-      device.gatt.disconnect();
-      console.log("Desconexión iniciada");
+      try {
+        device.gatt.disconnect();
+        console.log("Desconexión iniciada");
+      } catch (e) {
+        console.debug("Error disconnecting device:", e);
+      }
     }
-    
+
     setDevice(null);
     setCharacteristic(null);
     setIsConnected(false);
@@ -199,7 +233,18 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
     try {
       // Send command as a single byte using BLE write
       const data = new Uint8Array([command]);
-      await char.writeValue(data);
+      // Prefer writeValue (standard). If the characteristic only supports withoutResponse, try that.
+      try {
+        await (char as BluetoothRemoteGATTCharacteristic).writeValue(data);
+      } catch (writeErr) {
+        console.debug("writeValue failed, trying writeValueWithoutResponse if available", writeErr);
+        // Some implementations expose writeValueWithoutResponse
+        if ((char as any).writeValueWithoutResponse) {
+          await (char as any).writeValueWithoutResponse(data);
+        } else {
+          throw writeErr;
+        }
+      }
       console.log(`Comando BLE enviado: ${command}`);
       setLastCommand(command);
       
@@ -236,7 +281,7 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       setError("Error al enviar comando al dispositivo");
       
       // Si hay error, intentar reconectar
-      if (device?.gatt?.connected === false) {
+      if (device?.gatt && device.gatt.connected === false) {
         setIsConnected(false);
         setCharacteristic(null);
       }
