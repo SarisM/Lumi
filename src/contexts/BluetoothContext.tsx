@@ -259,17 +259,26 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       }
       console.log(`Comando BLE enviado: ${command}`);
       setLastCommand(command);
-      
-      if (command === LED_COMMANDS.WATER) {
-        try {
-          showNotification("Hora de hidratarte", {
-            body: "Tu Lumi indica que necesitas agua. Toca para ver el recordatorio.",
-            tag: "hydration-alert",
-            data: { url: "/hydration" },
-          });
-        } catch (e) {
-          console.debug("Notification failed:", e);
-        }
+      // Show a user notification for any command sent. Provide contextual text per command.
+      try {
+        const titles: Record<number, { title: string; body: string; tag?: string; url?: string }> = {
+          [LED_COMMANDS.OFF]: { title: 'Lumi apagado', body: 'Tu Lumi fue apagado.' },
+          [LED_COMMANDS.WATER]: { title: 'Hora de hidratarte', body: 'Tu Lumi indica que necesitas agua. Toca para ver el recordatorio.', tag: 'hydration-alert', url: '/hydration' },
+          [LED_COMMANDS.BALANCED]: { title: 'Nutrición balanceada', body: 'Tu Lumi muestra un estado nutricional balanceado.' },
+          [LED_COMMANDS.UNBALANCED]: { title: 'Nutrición desbalanceada', body: 'Tu Lumi indica que tu última comida no estuvo balanceada.' },
+          [LED_COMMANDS.GREAT_FINISH]: { title: '¡Buen trabajo!', body: 'Terminaste una actividad con buena ejecución. Sigue así.' },
+          [LED_COMMANDS.BAD_FINISH]: { title: 'Actividad incompleta', body: 'Tu Lumi marcó una finalización pobre. Intenta mejorar la próxima vez.' },
+        };
+
+        const info = titles[command] || { title: 'Comando enviado', body: `Se envió el comando ${command}` };
+
+        await showNotification(info.title, {
+          body: info.body,
+          tag: info.tag || 'bluetooth-command',
+          data: info.url ? { url: info.url } : undefined,
+        });
+      } catch (e) {
+        console.debug('Notification failed:', e);
       }
       return true;
     } catch (err) {
