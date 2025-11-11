@@ -3,6 +3,7 @@ import { User, Activity, Award, Flame, Calendar, TrendingUp, Bluetooth, LogOut, 
 import { useUser } from "../contexts/UserContext";
 import { useBluetooth } from "../contexts/BluetoothContext";
 import { Button } from "../components/ui/button";
+import { requestNotificationPermission, showNotification } from "../utils/pwa";
 
 interface ProfileScreenProps {
   onReconnectBluetooth?: () => void;
@@ -259,6 +260,52 @@ export function ProfileScreen({ onReconnectBluetooth, onLogout }: ProfileScreenP
               </Button>
             </div>
           )}
+        </div>
+
+        {/* Notifications Card */}
+        <div className="bg-white/70 backdrop-blur-xl rounded-2xl p-5 border border-white/50">
+          <div className="flex items-center gap-2 mb-3">
+            <User className="w-4 h-4 text-indigo-500" />
+            <h3 className="text-gray-800">Notificaciones</h3>
+          </div>
+
+          <div className="space-y-3">
+            <p className="text-sm text-gray-600">Estado actual: <span className="font-medium">{typeof Notification !== 'undefined' ? Notification.permission : 'no soportado'}</span></p>
+            <div className="flex items-center gap-2">
+              <Button
+                onClick={async () => {
+                  try {
+                    const perm = await requestNotificationPermission();
+                    if (perm === 'granted') {
+                      await showNotification('Notificaciones activadas', { body: 'Has activado las notificaciones.' });
+                    }
+                  } catch (e) {
+                    console.error('Error requesting notification permission', e);
+                  }
+                }}
+                className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white"
+              >
+                Activar notificaciones
+              </Button>
+
+              <Button
+                variant="ghost"
+                onClick={() => {
+                  // Reset the dismiss flag so the permission prompt can reappear
+                  try {
+                    localStorage.removeItem('lumi_notifications_prompt_dismissed');
+                    // Optionally inform the user
+                    showNotification('Recordatorio reactivado', { body: 'Volverás a ver el recordatorio para activar notificaciones.' }).catch(() => {});
+                  } catch (e) {
+                    console.debug('Error resetting notification prompt dismiss flag', e);
+                  }
+                }}
+              >
+                Volver a mostrar prompt
+              </Button>
+            </div>
+            <p className="text-xs text-gray-500">Las notificaciones funcionan mejor cuando la app está instalada como PWA y el service worker está permitido.</p>
+          </div>
         </div>
 
         {/* Streaks Card - Main Feature */}
