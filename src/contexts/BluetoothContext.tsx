@@ -136,8 +136,22 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
         char = await service.getCharacteristic(OPTIONAL_CHARACTERISTIC_UUID);
       } catch (e) {
         console.debug("Servicio/característica opcional no encontrada, buscando característica escribible...", e);
-        // Fetch all services and search for a writable characteristic
-        const services = await server.getPrimaryServices();
+        // Try to fetch all services. Some devices (or browser/firmware combos) may
+        // not expose any services, in which case getPrimaryServices can fail or
+        // return an empty list. Handle that gracefully and show a helpful message.
+        let services: any[] = [];
+        try {
+          services = await server.getPrimaryServices();
+        } catch (svcErr) {
+          console.debug("No se pudieron obtener los servicios GATT del dispositivo", svcErr);
+          throw new Error("El dispositivo no expone servicios GATT. Asegúrate de que sea un periférico BLE con servicios activos.");
+        }
+
+        if (!services || services.length === 0) {
+          console.debug("El dispositivo no tiene servicios GATT disponibles");
+          throw new Error("El dispositivo no expone servicios GATT. Asegúrate de que sea un periférico BLE con servicios activos.");
+        }
+
         for (const svc of services) {
           try {
             const chars = await svc.getCharacteristics();
