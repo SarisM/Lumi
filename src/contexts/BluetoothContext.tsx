@@ -189,18 +189,25 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
   let errorMessage = "Error al conectar";
       
       if (err instanceof DOMException) {
-        switch (err.name) {
-          case 'SecurityError':
-            errorMessage = "Bluetooth bloqueado por política de seguridad. Verifica que estés usando HTTPS y que los permisos estén habilitados.";
-            break;
-          case 'NotFoundError':
-            errorMessage = "No se encontró ningún dispositivo BLE. Asegúrate de que esté encendido y cerca.";
-            break;
-          case 'NotAllowedError':
-            errorMessage = "Permiso denegado. Por favor, permite el acceso a Bluetooth.";
-            break;
-          default:
-            errorMessage = err.message;
+        // Some browsers or managed environments disable Web Bluetooth globally and
+        // surface that as a NotFoundError with a message containing 'globally disabled'.
+        const msg = err.message || "";
+        if (msg.toLowerCase().includes("globally disabled")) {
+          errorMessage = "Web Bluetooth está deshabilitado globalmente en este navegador. Revisa la configuración del navegador o las políticas de tu organización. Prueba en Chrome/Edge con Web Bluetooth habilitado o en un equipo sin restricciones.";
+        } else {
+          switch (err.name) {
+            case 'SecurityError':
+              errorMessage = "Bluetooth bloqueado por política de seguridad. Verifica que estés usando HTTPS y que los permisos estén habilitados.";
+              break;
+            case 'NotFoundError':
+              errorMessage = "No se encontró ningún dispositivo BLE. Asegúrate de que esté encendido y cerca.";
+              break;
+            case 'NotAllowedError':
+              errorMessage = "Permiso denegado. Por favor, permite el acceso a Bluetooth.";
+              break;
+            default:
+              errorMessage = err.message;
+          }
         }
       } else if (err instanceof Error) {
         errorMessage = err.message;
