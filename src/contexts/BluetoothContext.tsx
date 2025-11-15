@@ -148,34 +148,60 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
         char = await service.getCharacteristic(OPTIONAL_CHARACTERISTIC_UUID);
       } catch (e) {
         console.debug("Servicio/característica opcional no encontrada, buscando característica escribible...", e);
-        // Try to fetch all services. Some devices (or browser/firmware combos) may
-        // not expose any services, in which case getPrimaryServices can fail or
-        // return an empty list. Handle that gracefully and show a helpful message.
-        let services: any[] = [];
-        try {
-          services = await server.getPrimaryServices();
-        } catch (svcErr) {
-          console.debug("No se pudieron obtener los servicios GATT del dispositivo", svcErr);
-          throw new Error("El dispositivo no expone servicios GATT. Asegúrate de que sea un periférico BLE con servicios activos.");
-        }
-
-        if (!services || services.length === 0) {
-          console.debug("El dispositivo no tiene servicios GATT disponibles");
-          throw new Error("El dispositivo no expone servicios GATT. Asegúrate de que sea un periférico BLE con servicios activos.");
-        }
-
-        for (const svc of services) {
+        // First, try asking for each common UUID individually. Some browsers
+        // will grant access only to services explicitly requested—trying
+        // them one-by-one can succeed where a bulk getPrimaryServices fails.
+        for (const uuid of COMMON_SERVICE_UUIDS) {
           try {
-            const chars = await svc.getCharacteristics();
-            for (const c of chars) {
-              if (c.properties.write || c.properties.writeWithoutResponse) {
-                char = c;
-                break;
+            console.debug("Intentando obtener servicio por UUID:", uuid);
+            const svc = await server.getPrimaryService(uuid);
+            try {
+              const chars = await svc.getCharacteristics();
+              for (const c of chars) {
+                if (c.properties.write || c.properties.writeWithoutResponse) {
+                  char = c;
+                  break;
+                }
               }
+              if (char) break;
+            } catch (charsErr) {
+              console.debug("No se pudieron leer características del servicio", uuid, charsErr);
             }
-            if (char) break;
-          } catch (innerErr) {
-            console.debug("Error iterating characteristics for service", svc.uuid, innerErr);
+          } catch (svcErr) {
+            console.debug("Servicio no disponible para UUID", uuid, svcErr);
+          }
+        }
+
+        // If still no characteristic, try to enumerate all services (fallback).
+        if (!char) {
+          let services: any[] = [];
+          try {
+            services = await server.getPrimaryServices();
+          } catch (svcErr) {
+            console.debug("No se pudieron obtener los servicios GATT del dispositivo (getPrimaryServices)", svcErr);
+            const tried = COMMON_SERVICE_UUIDS.join(", ");
+            throw new Error(`El dispositivo no expone servicios GATT o el navegador no otorgó acceso a ellos. Intentados UUIDs: ${tried}. Asegúrate de que el periférico BLE esté configurado como servidor GATT con servicios activos y que la web esté en HTTPS.`);
+          }
+
+          if (!services || services.length === 0) {
+            console.debug("El dispositivo no tiene servicios GATT disponibles");
+            const tried = COMMON_SERVICE_UUIDS.join(", ");
+            throw new Error(`El dispositivo no expone servicios GATT. Intentados UUIDs: ${tried}. Asegúrate de que sea un periférico BLE con servicios activos.`);
+          }
+
+          for (const svc of services) {
+            try {
+              const chars = await svc.getCharacteristics();
+              for (const c of chars) {
+                if (c.properties.write || c.properties.writeWithoutResponse) {
+                  char = c;
+                  break;
+                }
+              }
+              if (char) break;
+            } catch (innerErr) {
+              console.debug("Error iterating characteristics for service", svc.uuid, innerErr);
+            }
           }
         }
       }
