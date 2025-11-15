@@ -26,9 +26,9 @@ interface BluetoothContextType {
 
 const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
 
-// Arduino Nado BLE UUIDs
-const ARDUINO_SERVICE_UUID = "19b10000-e8f2-537e-4f6c-d104768a1214";
-const ARDUINO_CHARACTERISTIC_UUID = "19b10001-e8f2-537e-4f6c-d104768a1214";
+// Optional known service/characteristic UUID (kept optional so any BLE device can be chosen)
+const OPTIONAL_SERVICE_UUID = "19b10000-e8f2-537e-4f6c-d104768a1214";
+const OPTIONAL_CHARACTERISTIC_UUID = "19b10001-e8f2-537e-4f6c-d104768a1214";
 
 export function BluetoothProvider({ children }: { children: ReactNode }) {
   const [device, setDevice] = useState<any | null>(null);
@@ -88,12 +88,12 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
 
       console.log("Buscando dispositivos BLE (aceptando todos los dispositivos)...");
 
-      // Request any nearby BLE device. We include the Arduino service UUID as an optional
-      // service so that devices exposing it will still be accessible, but we allow the user
-      // to pick any device in case the target doesn't advertise that UUID.
+      // Request any nearby BLE device. We include an optional known service UUID so
+      // devices exposing it will still be accessible, but the user may pick any
+      // BLE device since `acceptAllDevices: true` is used.
       const selectedDevice = await (navigator as any).bluetooth.requestDevice({
         acceptAllDevices: true,
-        optionalServices: [ARDUINO_SERVICE_UUID],
+        optionalServices: [OPTIONAL_SERVICE_UUID],
       });
 
       console.log("Dispositivo seleccionado:", selectedDevice?.name || selectedDevice?.id);
@@ -132,10 +132,10 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       // iterate the available services and characteristics to find a writable characteristic.
   let char: any | null = null;
       try {
-        const service = await server.getPrimaryService(ARDUINO_SERVICE_UUID);
-        char = await service.getCharacteristic(ARDUINO_CHARACTERISTIC_UUID);
+        const service = await server.getPrimaryService(OPTIONAL_SERVICE_UUID);
+        char = await service.getCharacteristic(OPTIONAL_CHARACTERISTIC_UUID);
       } catch (e) {
-        console.debug("Servicio/característica Arduino no encontrada, buscando característica escribible...", e);
+        console.debug("Servicio/característica opcional no encontrada, buscando característica escribible...", e);
         // Fetch all services and search for a writable characteristic
         const services = await server.getPrimaryServices();
         for (const svc of services) {
@@ -162,7 +162,7 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
         char.addEventListener('characteristicvaluechanged', (event: Event) => {
           const val = (event.target as any).value;
           if (val) {
-            console.log('Received value from Arduino:', new Uint8Array(val.buffer));
+            console.log('Received value from BLE device:', new Uint8Array(val.buffer));
           }
         });
       }
@@ -173,7 +173,7 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
 
       try {
         showNotification("Lumi conectado", {
-          body: `Conectado a ${selectedDevice.name || "Arduino Nado"}`,
+          body: `Conectado a ${selectedDevice.name || "dispositivo BLE"}`,
           tag: "bluetooth-connection",
         });
       } catch (e) {
@@ -194,7 +194,7 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
             errorMessage = "Bluetooth bloqueado por política de seguridad. Verifica que estés usando HTTPS y que los permisos estén habilitados.";
             break;
           case 'NotFoundError':
-            errorMessage = "No se encontró ningún dispositivo Arduino Nado. Asegúrate de que esté encendido y cerca.";
+            errorMessage = "No se encontró ningún dispositivo BLE. Asegúrate de que esté encendido y cerca.";
             break;
           case 'NotAllowedError':
             errorMessage = "Permiso denegado. Por favor, permite el acceso a Bluetooth.";

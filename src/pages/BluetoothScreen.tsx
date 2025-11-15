@@ -154,13 +154,13 @@ export function BluetoothScreen({ onNext }: BluetoothScreenProps) {
           animate={{ opacity: 1, y: 0 }}
         >
           <h2 className="text-gray-800 mb-2">
-            {isConnected ? `¡Conectado a ${deviceName}! ✨` : isConnecting ? "Conectando a Lumi..." : "Conecta tu Lumi"}
+            {isConnected ? `¡Conectado a ${deviceName}! ✨` : isConnecting ? "Conectando..." : "Conecta tu dispositivo"}
           </h2>
           <p className="text-sm text-gray-500">
             {isConnected
-              ? "Tu Lumi está listo para brillar"
+              ? "Tu dispositivo está listo"
               : isConnecting
-              ? "Selecciona tu Arduino Nano"
+              ? "Selecciona tu dispositivo BLE"
               : "Asegúrate de que tu dispositivo esté cerca"}
           </p>
         </motion.div>
@@ -216,7 +216,7 @@ export function BluetoothScreen({ onNext }: BluetoothScreenProps) {
                 onClick={handleConnect}
                 disabled={isConnecting}
               >
-                {isConnecting ? "Conectando..." : "Conectar a Lumi"}
+                {isConnecting ? "Conectando..." : "Buscar dispositivo BLE"}
               </Button>
               <Button
                 variant="ghost"
