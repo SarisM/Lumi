@@ -36,6 +36,11 @@ const COMMON_SERVICE_UUIDS = [
   // Common vendor/custom service UUIDs used by many ESP32/HM-10 sketches
   "0000ffe0-0000-1000-8000-00805f9b34fb",
   "0000fff0-0000-1000-8000-00805f9b34fb",
+  // Nordic UART Service (commonly used for serial over BLE on ESP32)
+  "6e400001-b5a3-f393-e0a9-e50e24dcca9e",
+  // Generic Access / Generic Attribute (may be present)
+  "00001800-0000-1000-8000-00805f9b34fb",
+  "00001801-0000-1000-8000-00805f9b34fb",
 ];
 
 export function BluetoothProvider({ children }: { children: ReactNode }) {
@@ -180,13 +185,21 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
           } catch (svcErr) {
             console.debug("No se pudieron obtener los servicios GATT del dispositivo (getPrimaryServices)", svcErr);
             const tried = COMMON_SERVICE_UUIDS.join(", ");
-            throw new Error(`El dispositivo no expone servicios GATT o el navegador no otorgó acceso a ellos. Intentados UUIDs: ${tried}. Asegúrate de que el periférico BLE esté configurado como servidor GATT con servicios activos y que la web esté en HTTPS.`);
+            throw new Error(
+              `El dispositivo no expone servicios GATT o el navegador no otorgó acceso a ellos. Intentados UUIDs: ${tried}. ` +
+                `Comprueba: 1) que el periférico BLE esté encendido y actúe como servidor GATT (publicando servicios/characteristics), ` +
+                `2) que la web se sirva vía HTTPS y uses Chrome/Edge en un perfil sin políticas que bloqueen Web Bluetooth, ` +
+                `y 3) si usas un sketch de ESP32, que esté publicando un servicio UART (por ejemplo UUID 6e400001-...) o un servicio personalizado. Usa una app de escaneo BLE (nRF Connect) para verificar los servicios del periférico.`
+            );
           }
 
           if (!services || services.length === 0) {
             console.debug("El dispositivo no tiene servicios GATT disponibles");
             const tried = COMMON_SERVICE_UUIDS.join(", ");
-            throw new Error(`El dispositivo no expone servicios GATT. Intentados UUIDs: ${tried}. Asegúrate de que sea un periférico BLE con servicios activos.`);
+            throw new Error(
+              `El dispositivo no expone servicios GATT. Intentados UUIDs: ${tried}. ` +
+                `Verifica el firmware del periférico y que esté publicando servicios; prueba con una app de escaneo BLE para confirmar.`
+            );
           }
 
           for (const svc of services) {
