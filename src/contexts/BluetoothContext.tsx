@@ -27,8 +27,16 @@ interface BluetoothContextType {
 const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
 
 // Optional known service/characteristic UUID (kept optional so any BLE device can be chosen)
+// Keep the original example UUID but include some common BLE UART-like UUIDs
+// so ESP32/HM-10 type modules are more likely to expose accessible services.
 const OPTIONAL_SERVICE_UUID = "19b10000-e8f2-537e-4f6c-d104768a1214";
 const OPTIONAL_CHARACTERISTIC_UUID = "19b10001-e8f2-537e-4f6c-d104768a1214";
+const COMMON_SERVICE_UUIDS = [
+  OPTIONAL_SERVICE_UUID,
+  // Common vendor/custom service UUIDs used by many ESP32/HM-10 sketches
+  "0000ffe0-0000-1000-8000-00805f9b34fb",
+  "0000fff0-0000-1000-8000-00805f9b34fb",
+];
 
 export function BluetoothProvider({ children }: { children: ReactNode }) {
   const [device, setDevice] = useState<any | null>(null);
@@ -91,9 +99,13 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       // Request any nearby BLE device. We include an optional known service UUID so
       // devices exposing it will still be accessible, but the user may pick any
       // BLE device since `acceptAllDevices: true` is used.
+      // Request any nearby BLE device. We avoid forcing a single optional
+      // service (which can cause some devices to appear to have "no services").
+      // Instead, include a short list of common service UUIDs so browsers
+      // can grant access to typical ESP32/HM-10 style peripherals.
       const selectedDevice = await (navigator as any).bluetooth.requestDevice({
         acceptAllDevices: true,
-        optionalServices: [OPTIONAL_SERVICE_UUID],
+        optionalServices: COMMON_SERVICE_UUIDS,
       });
 
       console.log("Dispositivo seleccionado:", selectedDevice?.name || selectedDevice?.id);
