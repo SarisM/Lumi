@@ -234,6 +234,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
             weight: data.user.weight,
             height: data.user.height,
             activityLevel: data.user.activityLevel,
+            // Include optional day start/end if present on the server-side user record
+            dayStartTime: data.user.dayStartTime || data.user.day_start_time || undefined,
+            dayEndTime: data.user.dayEndTime || data.user.day_end_time || undefined,
           };
           setProfileState(userProfile);
           const needs = calculateNutritionalNeeds(userProfile);
