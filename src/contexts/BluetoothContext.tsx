@@ -204,11 +204,20 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
             );
           }
 
-          for (const svc of services) {
+for (const svc of services) {
             try {
               const chars = await svc.getCharacteristics();
               for (const c of chars) {
+                // Skip standard read-only characteristics
+                const uuid = c.uuid.toLowerCase();
+                if (uuid === '00002902-0000-1000-8000-00805f9b34fb' || // Client Characteristic Configuration
+                    uuid === '00002b29-0000-1000-8000-00805f9b34fb' || // Client Supported Features
+                    uuid === '00002a00-0000-1000-8000-00805f9b34fb' || // Device Name
+                    uuid === '00002a01-0000-1000-8000-00805f9b34fb') { // Appearance
+                  continue;
+                }
                 if (c.properties.write || c.properties.writeWithoutResponse) {
+                  console.debug("Found writable characteristic:", c.uuid, c.properties);
                   char = c;
                   break;
                 }
