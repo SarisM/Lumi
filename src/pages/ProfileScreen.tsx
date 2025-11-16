@@ -2,7 +2,7 @@ import { motion } from "motion/react";
 import { User, Activity, Award, Flame, Calendar, TrendingUp, Bluetooth, LogOut, BluetoothConnected, BluetoothOff } from "lucide-react";
 import { useUser } from "../contexts/UserContext";
 import { useBluetooth } from "../contexts/BluetoothContext";
-import { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Button } from "../components/ui/button";
 import { requestNotificationPermission, showNotification } from "../utils/pwa";
 
@@ -101,7 +101,7 @@ export function ProfileScreen({ onReconnectBluetooth, onLogout }: ProfileScreenP
   const [dayStart, setDayStart] = useState(profile?.dayStartTime || "07:00");
   const [dayEnd, setDayEnd] = useState(profile?.dayEndTime || "22:00");
   // Sync local inputs when profile loads/changes
-  React.useEffect(() => {
+  useEffect(() => {
     if (profile?.dayStartTime) setDayStart(profile.dayStartTime);
     if (profile?.dayEndTime) setDayEnd(profile.dayEndTime);
   }, [profile?.dayStartTime, profile?.dayEndTime]);
