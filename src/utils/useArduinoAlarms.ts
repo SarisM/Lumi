@@ -37,7 +37,7 @@ export function useArduinoAlarms({
   dayEndTime,
   lastMealBalanced,
 }: UseArduinoAlarmsProps) {
-  const { isConnected, sendCommand } = useBluetooth();
+  const { isConnected, sendCommand, sendBlueTestPulse } = useBluetooth();
   const alarmStateRef = useRef<AlarmState | null>(null);
   const lastWaterRef = useRef<number>(0);
   const lastMealRef = useRef<{ protein: number; fiber: number }>({ protein: 0, fiber: 0 });
@@ -77,6 +77,19 @@ export function useArduinoAlarms({
         alarmStateRef.current = newState;
   saveAlarmState(newState);
   debugLog("Alarms", "Agua registrada - alarmas de agua reseteadas");
+        // Test hook: optionally send a short blue LED pulse to the ESP32 when user adds a glass.
+        // To opt-in, set localStorage key `lumi_test_bluetooth_on_water` to '1' or 'true'.
+        try {
+          const testFlag = localStorage.getItem("lumi_test_bluetooth_on_water");
+          const testEnabled = testFlag === "1" || testFlag === "true";
+          if (testEnabled && isConnected && typeof sendBlueTestPulse === "function") {
+            // Fire-and-forget; this is a test-only pulse and should not interfere with other protocols
+            sendBlueTestPulse(1500).catch((e) => debugLog("Alarms", `Bluetooth test pulse failed: ${e}`));
+            debugLog("Alarms", "Se envió pulso de prueba Bluetooth (agua) - Azul");
+          }
+        } catch (e) {
+          debugLog("Alarms", "No se pudo leer localStorage para prueba Bluetooth: " + String(e));
+        }
       }
     }
     lastWaterRef.current = waterGlasses;

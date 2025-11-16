@@ -22,6 +22,8 @@ interface BluetoothContextType {
   disconnect: () => void;
   sendCommand: (command: LEDCommand) => Promise<void>;
   lastCommand: LEDCommand | null;
+  // Test helper: temporarily turn on the blue LED (WATER) for a duration, then turn off
+  sendBlueTestPulse: (durationMs?: number) => Promise<void>;
 }
 
 const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
@@ -525,6 +527,28 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Test helper: send a short blue LED pulse (WATER then OFF). Intended for manual testing only.
+  const sendBlueTestPulse = async (durationMs: number = 1500) => {
+    if (!isConnected || !characteristic) {
+      console.warn("No hay conexión Bluetooth activa - no se puede enviar pulso de prueba");
+      setError("No hay conexión Bluetooth activa");
+      return;
+    }
+
+    try {
+      // Turn on blue LED (WATER command)
+      await sendCommandInternal(characteristic, LED_COMMANDS.WATER);
+      // Wait requested duration
+      await new Promise((res) => setTimeout(res, durationMs));
+      // Turn off LED
+      await sendCommandInternal(characteristic, LED_COMMANDS.OFF);
+      setError(null);
+    } catch (err) {
+      console.error("Error al enviar pulso de prueba BLE:", err);
+      setError("Error al enviar pulso de prueba BLE");
+    }
+  };
+
   return (
     <BluetoothContext.Provider
       value={{
@@ -536,6 +560,7 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
         disconnect,
         sendCommand,
         lastCommand,
+        sendBlueTestPulse,
       }}
     >
       {children}
