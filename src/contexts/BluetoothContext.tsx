@@ -56,6 +56,9 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [lastCommand, setLastCommand] = useState<LEDCommand | null>(null);
   const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  // Queue for serializing BLE write operations to avoid "GATT operation already in progress" errors.
+  // We implement this as a promise chain stored in a ref so writes execute sequentially.
+  const writeQueueRef = React.useRef<Promise<any>>(Promise.resolve());
 
   useEffect(() => {
     if (!(navigator as any).bluetooth) {
@@ -512,19 +515,26 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       return;
     }
 
-    try {
-      await sendCommandInternal(characteristic, command);
-      setError(null);
-    } catch (err) {
-      console.error("Error al enviar comando:", err);
-      setError("Error al enviar comando al dispositivo");
-      
-      // Si hay error, intentar reconectar
-      if (device?.gatt && device.gatt.connected === false) {
-        setIsConnected(false);
-        setCharacteristic(null);
+    // Enqueue the write so we never run concurrent GATT writes.
+    const op = async () => {
+      try {
+        await sendCommandInternal(characteristic, command);
+        setError(null);
+      } catch (err) {
+        console.error("Error al enviar comando:", err);
+        setError("Error al enviar comando al dispositivo");
+        // If there is a connection-level problem, reset connection state
+        if (device?.gatt && device.gatt.connected === false) {
+          setIsConnected(false);
+          setCharacteristic(null);
+        }
+        throw err;
       }
-    }
+    };
+
+    // Append to the chain. Provide rejection handler so chain continues after errors.
+    writeQueueRef.current = writeQueueRef.current.then(op, op);
+    return writeQueueRef.current;
   };
 
   // Test helper: send a short blue LED pulse (WATER then OFF). Intended for manual testing only.
@@ -535,17 +545,26 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       return;
     }
 
+    // Use queued writes to avoid concurrent GATT operations.
     try {
-      // Turn on blue LED (WATER command)
-      await sendCommandInternal(characteristic, LED_COMMANDS.WATER);
-      // Wait requested duration
+      // enqueue WATER
+      const waterOp = async () => sendCommandInternal(characteristic, LED_COMMANDS.WATER);
+      writeQueueRef.current = writeQueueRef.current.then(waterOp, waterOp);
+      await writeQueueRef.current;
+
+      // wait for duration
       await new Promise((res) => setTimeout(res, durationMs));
-      // Turn off LED
-      await sendCommandInternal(characteristic, LED_COMMANDS.OFF);
+
+      // enqueue OFF
+      const offOp = async () => sendCommandInternal(characteristic, LED_COMMANDS.OFF);
+      writeQueueRef.current = writeQueueRef.current.then(offOp, offOp);
+      await writeQueueRef.current;
+
       setError(null);
     } catch (err) {
       console.error("Error al enviar pulso de prueba BLE:", err);
       setError("Error al enviar pulso de prueba BLE");
+      throw err;
     }
   };
 
