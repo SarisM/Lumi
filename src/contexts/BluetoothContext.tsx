@@ -359,8 +359,12 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       } catch (diagErr) {
         console.debug("Failed to read characteristic metadata", diagErr);
       }
-      // Send command as a single byte using BLE write
-      const data = new Uint8Array([command]);
+      // Send command as ASCII text bytes because the ESP32 firmware expects
+      // the command as a string (e.g. "1") and uses value.toInt() on the device side.
+      // Convert the numeric command to its ASCII string representation before sending.
+      const commandString = command.toString(); // e.g. 1 -> "1"
+      const encoder = new TextEncoder();
+      const data = encoder.encode(commandString); // ASCII bytes [49]
       // Choose write method according to characteristic properties.
       const supportsWrite = !!char.properties?.write;
       const supportsWriteWithoutResponse = !!char.properties?.writeWithoutResponse;
