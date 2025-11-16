@@ -26,11 +26,11 @@ interface BluetoothContextType {
 
 const BluetoothContext = createContext<BluetoothContextType | undefined>(undefined);
 
-// Optional known service/characteristic UUID (kept optional so any BLE device can be chosen)
-// Keep the original example UUID but include some common BLE UART-like UUIDs
-// so ESP32/HM-10 type modules are more likely to expose accessible services.
-const OPTIONAL_SERVICE_UUID = "19b10000-e8f2-537e-4f6c-d104768a1214";
-const OPTIONAL_CHARACTERISTIC_UUID = "19b10001-e8f2-537e-4f6c-d104768a1214";
+// Optional known service/characteristic UUID for the ESP32 Lumi firmware.
+// These are the correct UUIDs published by the ESP32 device; keeping them
+// as optional still allows the user to pick other BLE peripherals.
+const OPTIONAL_SERVICE_UUID = "4fafc201-1fb5-459e-8fcc-c5c9c331914b";
+const OPTIONAL_CHARACTERISTIC_UUID = "beb5483e-36e1-4688-b7f5-ea07361b26a8";
 const COMMON_SERVICE_UUIDS = [
   OPTIONAL_SERVICE_UUID,
   // Common vendor/custom service UUIDs used by many ESP32/HM-10 sketches
@@ -204,16 +204,22 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
             );
           }
 
-for (const svc of services) {
+          for (const svc of services) {
             try {
               const chars = await svc.getCharacteristics();
               for (const c of chars) {
                 // Skip standard read-only characteristics
                 const uuid = c.uuid.toLowerCase();
                 if (uuid === '00002902-0000-1000-8000-00805f9b34fb' || // Client Characteristic Configuration
-                    uuid === '00002b29-0000-1000-8000-00805f9b34fb' || // Client Supported Features
                     uuid === '00002a00-0000-1000-8000-00805f9b34fb' || // Device Name
                     uuid === '00002a01-0000-1000-8000-00805f9b34fb') { // Appearance
+                  continue;
+                }
+                // Explicitly avoid using a known-bad/wrong characteristic UUID
+                // some devices or older examples use '00002b29-...' by mistake
+                // which is not the writable characteristic for our ESP32 firmware.
+                if (uuid === '00002b29-0000-1000-8000-00805f9b34fb') {
+                  console.warn("Skipping known-wrong characteristic UUID", uuid);
                   continue;
                 }
                 if (c.properties.write || c.properties.writeWithoutResponse) {
@@ -326,6 +332,19 @@ for (const svc of services) {
 
   const sendCommandInternal = async (char: any, command: LEDCommand) => {
     try {
+      // Guard: avoid attempting writes to a known-bad characteristic UUID.
+      try {
+        const cu = (char?.uuid || "").toLowerCase();
+        if (cu === '00002b29-0000-1000-8000-00805f9b34fb') {
+          throw new Error(
+            `Intento de escribir en la característica equivocada (${cu}). La característica correcta es ${OPTIONAL_CHARACTERISTIC_UUID}. ` +
+              `Vuelve a conectar al dispositivo o selecciona el periférico correcto.`
+          );
+        }
+      } catch (guardErr) {
+        console.error("BLE guard check failed:", guardErr);
+        throw guardErr;
+      }
       // Diagnostic: print characteristic details before attempting write
       try {
         console.debug("BLE write: characteristic UUID:", char.uuid, "properties:", char.properties);
