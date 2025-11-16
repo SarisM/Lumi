@@ -393,7 +393,52 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
       }
 
       if (lastErr) {
-        console.error("BLE write failed for characteristic", char.uuid, "error:", lastErr);
+        console.error("BLE write_failed for characteristic", char.uuid, "error:", lastErr);
+        // If the write failed, attempt a fallback: try other writable characteristics
+        // within the same parent service (sometimes devices expose multiple writable
+        // characteristics and the first one chosen earlier may reject writes).
+        try {
+          if (char && (char.service as any) && (char.service as any).getCharacteristics) {
+            const siblings = await (char.service as any).getCharacteristics();
+            for (const s of siblings) {
+              if (s.uuid === char.uuid) continue;
+              if (!s.properties) continue;
+              if (!(s.properties.write || s.properties.writeWithoutResponse)) continue;
+              try {
+                console.debug("Trying sibling characteristic for write:", s.uuid, s.properties);
+                // Try the same sequence of write attempts for the sibling
+                const altData = new Uint8Array([command]);
+                if (s.properties.writeWithoutResponse && (s as any).writeValueWithoutResponse) {
+                  await (s as any).writeValueWithoutResponse(altData);
+                } else if (s.properties.write) {
+                  await (s as BluetoothRemoteGATTCharacteristic).writeValue(altData);
+                } else if ((s as any).writeValueWithoutResponse) {
+                  await (s as any).writeValueWithoutResponse(altData);
+                } else {
+                  // Try buffer/DataView fallback
+                  const buf = altData.buffer.slice(altData.byteOffset, altData.byteOffset + altData.byteLength);
+                  try {
+                    await (s as BluetoothRemoteGATTCharacteristic).writeValue(buf as ArrayBuffer);
+                  } catch (e) {
+                    await (s as BluetoothRemoteGATTCharacteristic).writeValue(new DataView(buf as ArrayBuffer));
+                  }
+                }
+
+                // If we reach here, sibling accepted the write — update stored characteristic
+                console.log("BLE write succeeded using sibling characteristic", s.uuid);
+                setCharacteristic(s);
+                setLastCommand(command);
+                return true;
+              } catch (sErr) {
+                console.debug("Sibling write failed, trying next:", s.uuid, sErr);
+                continue;
+              }
+            }
+          }
+        } catch (fallbackErr) {
+          console.debug("Fallback sibling enumeration failed:", fallbackErr);
+        }
+
         if (lastErr && lastErr.name === 'NotSupportedError') {
           throw new Error(`NotSupportedError al escribir en la característica ${char.uuid}. Revisa que la característica soporte escritura y que el periférico acepte el formato enviado (bytes). Mensaje original: ${lastErr.message}`);
         }
