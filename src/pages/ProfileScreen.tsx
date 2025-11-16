@@ -2,6 +2,7 @@ import { motion } from "motion/react";
 import { User, Activity, Award, Flame, Calendar, TrendingUp, Bluetooth, LogOut, BluetoothConnected, BluetoothOff } from "lucide-react";
 import { useUser } from "../contexts/UserContext";
 import { useBluetooth } from "../contexts/BluetoothContext";
+import { useState } from "react";
 import { Button } from "../components/ui/button";
 import { requestNotificationPermission, showNotification } from "../utils/pwa";
 
@@ -11,7 +12,7 @@ interface ProfileScreenProps {
 }
 
 export function ProfileScreen({ onReconnectBluetooth, onLogout }: ProfileScreenProps = {}) {
-  const { profile, nutritionalNeeds, streakData, dailyHistory, logout, userId, accessToken } = useUser();
+  const { profile, nutritionalNeeds, streakData, dailyHistory, logout, userId, accessToken, setProfile } = useUser();
   const { isConnected, deviceName, connect, disconnect } = useBluetooth();
   
   const handleLogout = async () => {
@@ -95,6 +96,35 @@ export function ProfileScreen({ onReconnectBluetooth, onLogout }: ProfileScreenP
 
   // Get last 7 days for visual
   const last7Days = dailyHistory.slice(-7);
+
+  // Local state for day start/end editable fields
+  const [dayStart, setDayStart] = useState(profile?.dayStartTime || "07:00");
+  const [dayEnd, setDayEnd] = useState(profile?.dayEndTime || "22:00");
+  // Sync local inputs when profile loads/changes
+  React.useEffect(() => {
+    if (profile?.dayStartTime) setDayStart(profile.dayStartTime);
+    if (profile?.dayEndTime) setDayEnd(profile.dayEndTime);
+  }, [profile?.dayStartTime, profile?.dayEndTime]);
+
+  const [saveStatus, setSaveStatus] = useState<string | null>(null);
+
+  const saveDayTimes = async () => {
+    try {
+      if (!profile) return;
+      const updated = {
+        ...profile,
+        dayStartTime: dayStart,
+        dayEndTime: dayEnd,
+      };
+      await setProfile(updated);
+      setSaveStatus("Guardado");
+      setTimeout(() => setSaveStatus(null), 2000);
+    } catch (e) {
+      console.debug('Error saving day times', e);
+      setSaveStatus("Error");
+      setTimeout(() => setSaveStatus(null), 2000);
+    }
+  };
 
   return (
     <div className="relative h-full bg-gradient-to-br from-yellow-50 via-amber-50 to-orange-50 overflow-hidden p-6 flex flex-col">
@@ -305,6 +335,42 @@ export function ProfileScreen({ onReconnectBluetooth, onLogout }: ProfileScreenP
               </Button>
             </div>
             <p className="text-xs text-gray-500">Las notificaciones funcionan mejor cuando la app está instalada como PWA y el service worker está permitido.</p>
+          </div>
+        </div>
+
+        {/* Day Start/End Configuration */}
+        <div className="bg-white/70 backdrop-blur-xl rounded-2xl p-5 border border-white/50">
+          <div className="flex items-center gap-2 mb-3">
+            <Calendar className="w-4 h-4 text-indigo-500" />
+            <h3 className="text-gray-800">Configuración del día</h3>
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <label className="text-sm text-gray-600">Inicio del día</label>
+              <input
+                type="time"
+                value={dayStart}
+                onChange={(e) => setDayStart(e.target.value)}
+                className="rounded-md border px-2 py-1"
+              />
+            </div>
+            <div className="flex items-center justify-between">
+              <label className="text-sm text-gray-600">Fin del día</label>
+              <input
+                type="time"
+                value={dayEnd}
+                onChange={(e) => setDayEnd(e.target.value)}
+                className="rounded-md border px-2 py-1"
+              />
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button onClick={saveDayTimes} className="bg-gradient-to-r from-indigo-500 to-purple-500 text-white">Guardar</Button>
+              {saveStatus && <span className="text-sm text-gray-600">{saveStatus}</span>}
+            </div>
+
+            <p className="text-xs text-gray-500">Ajusta cuándo comienza y termina tu día; esto afecta las alarmas mostradas en tu Lumi.</p>
           </div>
         </div>
 

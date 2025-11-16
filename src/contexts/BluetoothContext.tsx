@@ -59,6 +59,9 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
   // Queue for serializing BLE write operations to avoid "GATT operation already in progress" errors.
   // We implement this as a promise chain stored in a ref so writes execute sequentially.
   const writeQueueRef = React.useRef<Promise<any>>(Promise.resolve());
+  // Auto-off timer: when a non-OFF command is sent, automatically send OFF after this duration
+  const AUTO_OFF_MS = 3 * 60 * 1000; // 3 minutes
+  const autoOffTimeoutRef = React.useRef<number | null>(null);
 
   useEffect(() => {
     if (!(navigator as any).bluetooth) {
@@ -537,7 +540,41 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
     };
 
     // Append to the chain. Provide rejection handler so chain continues after errors.
-    writeQueueRef.current = writeQueueRef.current.then(op, op);
+    writeQueueRef.current = writeQueueRef.current.then(op, op).then(async () => {
+      // After a successful send, schedule or cancel auto-off based on the command
+      try {
+        if (command !== LED_COMMANDS.OFF) {
+          // Clear existing timer
+          if (autoOffTimeoutRef.current) {
+            window.clearTimeout(autoOffTimeoutRef.current as any);
+            autoOffTimeoutRef.current = null;
+          }
+
+          // Schedule an OFF after AUTO_OFF_MS. We enqueue the OFF write using the same writeQueue
+          autoOffTimeoutRef.current = window.setTimeout(() => {
+            // Enqueue an OFF write directly via sendCommandInternal to avoid re-scheduling another auto-off
+            const offOp = async () => {
+              if (!characteristic) return;
+              try {
+                await sendCommandInternal(characteristic, LED_COMMANDS.OFF);
+              } catch (err) {
+                console.debug('Auto-OFF failed:', err);
+              }
+            };
+            writeQueueRef.current = writeQueueRef.current.then(offOp, offOp);
+          }, AUTO_OFF_MS) as unknown as number;
+        } else {
+          // If an explicit OFF was sent, cancel any pending auto-off
+          if (autoOffTimeoutRef.current) {
+            window.clearTimeout(autoOffTimeoutRef.current as any);
+            autoOffTimeoutRef.current = null;
+          }
+        }
+      } catch (e) {
+        console.debug('Auto-off scheduling error:', e);
+      }
+    });
+
     return writeQueueRef.current;
   };
 
