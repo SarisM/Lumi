@@ -42,6 +42,8 @@ const COMMON_SERVICE_UUIDS = [
   "00001800-0000-1000-8000-00805f9b34fb",
   "00001801-0000-1000-8000-00805f9b34fb",
 ];
+// Toggle verbose BLE diagnostics (set to true to print services/characteristics)
+const BLE_DIAGNOSTIC = false;
 
 export function BluetoothProvider({ children }: { children: ReactNode }) {
   const [device, setDevice] = useState<any | null>(null);
@@ -315,19 +317,45 @@ export function BluetoothProvider({ children }: { children: ReactNode }) {
 
   const sendCommandInternal = async (char: any, command: LEDCommand) => {
     try {
+      // Diagnostic: print characteristic details before attempting write
+      try {
+        console.debug("BLE write: characteristic UUID:", char.uuid, "properties:", char.properties);
+        if (BLE_DIAGNOSTIC && char.service) {
+          console.debug("BLE write: parent service UUID:", char.service.uuid);
+        }
+      } catch (diagErr) {
+        console.debug("Failed to read characteristic metadata", diagErr);
+      }
       // Send command as a single byte using BLE write
       const data = new Uint8Array([command]);
-      // Prefer writeValue (standard). If the characteristic only supports withoutResponse, try that.
+      // Choose write method according to characteristic properties.
+      const supportsWrite = !!char.properties?.write;
+      const supportsWriteWithoutResponse = !!char.properties?.writeWithoutResponse;
+
+      if (!supportsWrite && !supportsWriteWithoutResponse) {
+        throw new Error(`La característica ${char.uuid} no soporta escritura (write/writeWithoutResponse). Propiedades: ${JSON.stringify(char.properties)}`);
+      }
+
+      // Prefer write (with response) if advertised; otherwise use withoutResponse.
       try {
-        await (char as BluetoothRemoteGATTCharacteristic).writeValue(data);
-      } catch (writeErr) {
-        console.debug("writeValue failed, trying writeValueWithoutResponse if available", writeErr);
-        // Some implementations expose writeValueWithoutResponse
-        if ((char as any).writeValueWithoutResponse) {
-          await (char as any).writeValueWithoutResponse(data);
-        } else {
-          throw writeErr;
+        if (supportsWrite) {
+          await (char as BluetoothRemoteGATTCharacteristic).writeValue(data);
+        } else if (supportsWriteWithoutResponse) {
+          // Some implementations only expose a vendor method for writeWithoutResponse
+          if ((char as any).writeValueWithoutResponse) {
+            await (char as any).writeValueWithoutResponse(data);
+          } else {
+            // Fallback to writeValue and allow browser/device to handle it
+            await (char as BluetoothRemoteGATTCharacteristic).writeValue(data);
+          }
         }
+      } catch (writeErr: any) {
+        console.error("BLE write failed for characteristic", char.uuid, "error:", writeErr);
+        // Provide a more actionable message for NotSupportedError GATT issues
+        if (writeErr && writeErr.name === 'NotSupportedError') {
+          throw new Error(`NotSupportedError al escribir en la característica ${char.uuid}. Revisa que la característica soporte escritura y que el periférico acepte el formato enviado (bytes). Mensaje original: ${writeErr.message}`);
+        }
+        throw writeErr;
       }
       console.log(`Comando BLE enviado: ${command}`);
       setLastCommand(command);
