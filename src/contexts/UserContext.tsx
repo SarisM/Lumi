@@ -84,6 +84,61 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [streakData, setStreakData] = useState<StreakData | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
 
+  // Helper to fetch and store the user profile + nutritional needs
+  const loadUserProfile = async (targetUserId: string, token: string) => {
+    try {
+      debugLog('UserContext', 'Loading user profile from server...');
+      const response = await fetch(
+        `https://${projectId}.supabase.co/functions/v1/make-server-7e221a31/users/${targetUserId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        }
+      );
+
+      debugLog('UserContext', 'Profile fetch response status:', response.status);
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        debugError('UserContext', 'Profile fetch failed:', errorText);
+
+        if (response.status === 401) {
+          debugError('UserContext', 'Token invalid, clearing session');
+          clearState();
+        }
+
+        // 404 means the user still needs to complete onboarding; nothing to set yet
+        return;
+      }
+
+      const data = await response.json();
+      debugLog('UserContext', 'Loaded user data:', data);
+
+      if (data.user && data.user.weight && data.user.height && data.user.age) {
+        const userProfile: UserProfile = {
+          name: data.user.name,
+          age: data.user.age,
+          gender: data.user.gender,
+          weight: data.user.weight,
+          height: data.user.height,
+          activityLevel: data.user.activityLevel,
+          // Include optional day start/end if present on the server-side user record
+          dayStartTime: data.user.dayStartTime || data.user.day_start_time || undefined,
+          dayEndTime: data.user.dayEndTime || data.user.day_end_time || undefined,
+        };
+        setProfileState(userProfile);
+        const needs = calculateNutritionalNeeds(userProfile);
+        setNutritionalNeeds(needs);
+        debugLog('UserContext', 'Profile and needs set successfully');
+      } else {
+        debugWarn('UserContext', 'User data incomplete or missing, needs to complete profile');
+      }
+    } catch (error) {
+      debugError('UserContext', 'Error loading user profile:', error);
+    }
+  };
+
   const setAuth = (newUserId: string, newAccessToken: string, name: string) => {
     setUserId(newUserId);
     setAccessToken(newAccessToken);
@@ -191,60 +246,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         localStorage.setItem("lumi_user_name", validName);
         
         // Load user profile from server with valid token
-        debugLog('UserContext', 'Loading user profile from server...');
-        const response = await fetch(
-          `https://${projectId}.supabase.co/functions/v1/make-server-7e221a31/users/${validUserId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${validToken}`,
-            },
-          }
-        );
-        
-        debugLog('UserContext', 'Profile fetch response status:', response.status);
-        
-        if (!response.ok) {
-          const errorText = await response.text();
-          debugError('UserContext', 'Profile fetch failed:', errorText);
-          
-          // If still getting 401, the session might be invalid
-          if (response.status === 401) {
-            debugError('UserContext', 'Token invalid, clearing session');
-            clearState();
-            return;
-          }
-          
-          // For 404, user might not have completed profile yet
-          if (response.status === 404) {
-            debugWarn('UserContext', 'User profile not found, might need to complete onboarding');
-            return;
-          }
-          
-          throw new Error(`Failed to fetch profile: ${response.status}`);
-        }
-        
-        const data = await response.json();
-        debugLog('UserContext', 'Loaded user data:', data);
-        
-        if (data.user && data.user.weight && data.user.height && data.user.age) {
-          const userProfile: UserProfile = {
-            name: data.user.name,
-            age: data.user.age,
-            gender: data.user.gender,
-            weight: data.user.weight,
-            height: data.user.height,
-            activityLevel: data.user.activityLevel,
-            // Include optional day start/end if present on the server-side user record
-            dayStartTime: data.user.dayStartTime || data.user.day_start_time || undefined,
-            dayEndTime: data.user.dayEndTime || data.user.day_end_time || undefined,
-          };
-          setProfileState(userProfile);
-          const needs = calculateNutritionalNeeds(userProfile);
-          setNutritionalNeeds(needs);
-          debugLog('UserContext', 'Profile and needs set successfully');
-        } else {
-          debugWarn('UserContext', 'User data incomplete or missing, needs to complete profile');
-        }
+        await loadUserProfile(validUserId, validToken);
       } catch (error) {
         debugError('UserContext', 'Error during session restore:', error);
       }
@@ -292,6 +294,16 @@ export function UserProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   }, [isLoggingOut]);
+
+  // Ensure profile & needs are loaded after sign-in and not just on session restore
+  useEffect(() => {
+    if (!userId || !accessToken) return;
+
+    // If profile already loaded, nothing to do
+    if (profile && nutritionalNeeds) return;
+
+    loadUserProfile(userId, accessToken);
+  }, [userId, accessToken]);
 
   const calculateNutritionalNeeds = (profile: UserProfile): NutritionalNeeds => {
     // Proteína: 1.2g por kg de peso corporal (ajustado por actividad)
