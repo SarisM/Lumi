@@ -12,39 +12,19 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
 );
 
-// Utilities for day-based tracking with a user-specific day start (defaults to 06:00 UTC)
-const DEFAULT_DAY_START = "06:00";
-
-function parseDayStartTime(user: any): { hours: number; minutes: number } {
-  const raw = user?.dayStartTime || user?.day_start_time || DEFAULT_DAY_START;
-  const [h, m] = (raw as string).split(":").map(Number);
-  return {
-    hours: Number.isFinite(h) ? h : 6,
-    minutes: Number.isFinite(m) ? m : 0,
-  };
-}
-
-// Returns the tracking date string (YYYY-MM-DD) using UTC but shifted by the user's configured day start.
-function getTrackingDate(user: any, now: Date = new Date()): string {
-  const { hours, minutes } = parseDayStartTime(user);
-  const startOfToday = Date.UTC(
+// Utilities for day-based tracking at strict calendar midnight (UTC).
+// This keeps Bluetooth end-of-day logic (which may use user dayStart/dayEnd) separate.
+function getUtcDateString(now: Date = new Date()): string {
+  const startOfDayUtc = Date.UTC(
     now.getUTCFullYear(),
     now.getUTCMonth(),
     now.getUTCDate(),
-    hours,
-    minutes,
+    0,
+    0,
     0,
     0
   );
-
-  // If current time is before today's start-of-day in UTC terms, use the previous day as "today"
-  if (now.getTime() < startOfToday) {
-    const prevDay = new Date(startOfToday);
-    prevDay.setUTCDate(prevDay.getUTCDate() - 1);
-    return prevDay.toISOString().split("T")[0];
-  }
-
-  return new Date(startOfToday).toISOString().split("T")[0];
+  return new Date(startOfDayUtc).toISOString().split("T")[0];
 }
 
 // Enable logger
@@ -311,8 +291,7 @@ app.post("/make-server-7e221a31/hydration/:userId", async (c) => {
     const body = await c.req.json();
     const { glasses = 1 } = body;
 
-    const user = await kv.get(`user:${userId}`) || {};
-    const today = getTrackingDate(user);
+    const today = getUtcDateString();
     const key = `daily:${userId}:${today}`;
     
     // Get current daily data
@@ -400,8 +379,7 @@ app.post("/make-server-7e221a31/nutrition/:userId", async (c) => {
       return c.json({ error: "meal data is required" }, 400);
     }
 
-    const user = await kv.get(`user:${userId}`) || {};
-    const today = getTrackingDate(user);
+    const today = getUtcDateString();
     const key = `daily:${userId}:${today}`;
     
     // Get current daily data
@@ -535,7 +513,7 @@ app.get("/make-server-7e221a31/summary/:userId", async (c) => {
   try {
     const userId = c.req.param("userId");
     const user = await kv.get(`user:${userId}`);
-    const today = getTrackingDate(user);
+    const today = getUtcDateString();
     console.log(`Getting summary for user ${userId} on ${today}`);
     
     let dailyData = await kv.get(`daily:${userId}:${today}`);

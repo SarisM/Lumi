@@ -68,6 +68,21 @@ interface UserContextType {
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
+// Returns YYYY-MM-DD at UTC midnight (aligned with server daily reset)
+const getTodayUtcDateString = () => {
+  const now = new Date();
+  const startOfDayUtc = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+    0,
+    0,
+    0,
+    0
+  );
+  return new Date(startOfDayUtc).toISOString().split("T")[0];
+};
+
 export function UserProvider({ children }: { children: ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
@@ -83,6 +98,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [dailyHistory, setDailyHistory] = useState<DailyProgress[]>([]);
   const [streakData, setStreakData] = useState<StreakData | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
+  const [lastResetDate, setLastResetDate] = useState<string>(() => {
+    return localStorage.getItem("lumi_last_reset_date") || getTodayUtcDateString();
+  });
 
   // Helper to fetch and store the user profile + nutritional needs
   const loadUserProfile = async (targetUserId: string, token: string) => {
@@ -146,6 +164,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("lumi_user_id", newUserId);
     localStorage.setItem("lumi_access_token", newAccessToken);
     localStorage.setItem("lumi_user_name", name);
+    const today = getTodayUtcDateString();
+    setLastResetDate(today);
+    localStorage.setItem("lumi_last_reset_date", today);
   };
 
   const clearState = () => {
@@ -165,6 +186,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     });
     setDailyHistory([]);
     setStreakData(null);
+    setLastResetDate(getTodayUtcDateString());
     
     // Clear localStorage
     localStorage.removeItem("lumi_user_id");
@@ -172,6 +194,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     localStorage.removeItem("lumi_user_name");
     localStorage.removeItem("lumi_current_screen");
     localStorage.removeItem("lumi_main_tab");
+    localStorage.removeItem("lumi_last_reset_date");
     
     debugLog('UserContext', 'State cleared successfully');
   };
@@ -304,6 +327,33 @@ export function UserProvider({ children }: { children: ReactNode }) {
 
     loadUserProfile(userId, accessToken);
   }, [userId, accessToken]);
+
+  // Midnight-based UI reset: clear daily UI state when calendar day changes (UTC)
+  useEffect(() => {
+    const resetDailyUi = () => {
+      const today = getTodayUtcDateString();
+      if (today !== lastResetDate) {
+        debugLog('UserContext', 'Midnight reset triggered', { lastResetDate, today });
+        setWaterGlasses(0);
+        setMealIntakes({
+          breakfast: { protein: 0, fiber: 0 },
+          lunch: { protein: 0, fiber: 0 },
+          dinner: { protein: 0, fiber: 0 },
+        });
+        setLastResetDate(today);
+        localStorage.setItem("lumi_last_reset_date", today);
+        // Pull fresh server data for the new day without touching history
+        if (userId && accessToken) {
+          refreshData();
+        }
+      }
+    };
+
+    // Run immediately on mount to catch day changes after app was backgrounded
+    resetDailyUi();
+    const interval = setInterval(resetDailyUi, 60 * 1000); // check every minute
+    return () => clearInterval(interval);
+  }, [lastResetDate, userId, accessToken]);
 
   const calculateNutritionalNeeds = (profile: UserProfile): NutritionalNeeds => {
     // Proteína: 1.2g por kg de peso corporal (ajustado por actividad)
