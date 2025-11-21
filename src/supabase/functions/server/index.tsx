@@ -12,19 +12,40 @@ const supabase = createClient(
   Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') ?? '',
 );
 
-// Utilities for day-based tracking at strict calendar midnight (UTC).
-// This keeps Bluetooth end-of-day logic (which may use user dayStart/dayEnd) separate.
-function getUtcDateString(now: Date = new Date()): string {
-  const startOfDayUtc = Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-    0,
-    0,
-    0,
-    0
-  );
-  return new Date(startOfDayUtc).toISOString().split("T")[0];
+// Utilities for day-based tracking at the user's calendar midnight.
+// The frontend sends the local date (YYYY-MM-DD) so we can keep daily buckets aligned to the user's day
+// without touching lighting schedule (dayStart/dayEnd).
+function formatDate(date: Date): string {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+// Fallback to the server's local calendar day (not UTC) to avoid 5pm rollovers.
+function getLocalDateString(now: Date = new Date()): string {
+  return formatDate(now);
+}
+
+// Resolve the intended day for the request. Prefer an explicit client date to keep UI and storage aligned.
+function getDateFromRequest(c: any): string {
+  const queryDate = c.req.query("date");
+  const headerDate = c.req.header("x-client-date");
+  const rawDate = queryDate || headerDate;
+
+  if (rawDate && /^\d{4}-\d{2}-\d{2}$/.test(rawDate)) {
+    return rawDate;
+  }
+
+  const tzOffsetHeader = c.req.header("x-timezone-offset");
+  if (tzOffsetHeader && !isNaN(Number(tzOffsetHeader))) {
+    const offsetMinutes = Number(tzOffsetHeader);
+    const now = new Date();
+    const clientNow = new Date(now.getTime() - offsetMinutes * 60 * 1000);
+    return formatDate(clientNow);
+  }
+
+  return getLocalDateString();
 }
 
 // Enable logger
@@ -235,7 +256,7 @@ app.post("/make-server-7e221a31/users/profile", async (c) => {
     });
 
     // Initialize daily tracking for today
-    const today = new Date().toISOString().split('T')[0];
+    const today = getDateFromRequest(c);
     const existingDaily = await kv.get(`daily:${userId}:${today}`);
     
     if (!existingDaily) {
@@ -291,7 +312,7 @@ app.post("/make-server-7e221a31/hydration/:userId", async (c) => {
     const body = await c.req.json();
     const { glasses = 1 } = body;
 
-    const today = getUtcDateString();
+    const today = getDateFromRequest(c);
     const key = `daily:${userId}:${today}`;
     
     // Get current daily data
@@ -379,7 +400,7 @@ app.post("/make-server-7e221a31/nutrition/:userId", async (c) => {
       return c.json({ error: "meal data is required" }, 400);
     }
 
-    const today = getUtcDateString();
+    const today = getDateFromRequest(c);
     const key = `daily:${userId}:${today}`;
     
     // Get current daily data
@@ -513,7 +534,7 @@ app.get("/make-server-7e221a31/summary/:userId", async (c) => {
   try {
     const userId = c.req.param("userId");
     const user = await kv.get(`user:${userId}`);
-    const today = getUtcDateString();
+    const today = getDateFromRequest(c);
     console.log(`Getting summary for user ${userId} on ${today}`);
     
     let dailyData = await kv.get(`daily:${userId}:${today}`);

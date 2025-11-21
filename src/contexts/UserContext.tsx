@@ -68,20 +68,19 @@ interface UserContextType {
 
 const UserContext = createContext<UserContextType | undefined>(undefined);
 
-// Returns YYYY-MM-DD at UTC midnight (aligned with server daily reset)
-const getTodayUtcDateString = () => {
+// Returns YYYY-MM-DD for the local calendar day (00:00–23:59 in the user's timezone)
+const getTodayLocalDateString = () => {
   const now = new Date();
-  const startOfDayUtc = Date.UTC(
-    now.getUTCFullYear(),
-    now.getUTCMonth(),
-    now.getUTCDate(),
-    0,
-    0,
-    0,
-    0
-  );
-  return new Date(startOfDayUtc).toISOString().split("T")[0];
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, "0");
+  const day = String(now.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 };
+
+const buildDateHeaders = () => ({
+  "X-Client-Date": getTodayLocalDateString(),
+  "X-Timezone-Offset": String(new Date().getTimezoneOffset()),
+});
 
 export function UserProvider({ children }: { children: ReactNode }) {
   const [userId, setUserId] = useState<string | null>(null);
@@ -99,7 +98,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
   const [streakData, setStreakData] = useState<StreakData | null>(null);
   const [isLoggingOut, setIsLoggingOut] = useState(false);
   const [lastResetDate, setLastResetDate] = useState<string>(() => {
-    return localStorage.getItem("lumi_last_reset_date") || getTodayUtcDateString();
+    return localStorage.getItem("lumi_last_reset_date") || getTodayLocalDateString();
   });
 
   // Helper to fetch and store the user profile + nutritional needs
@@ -164,7 +163,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     localStorage.setItem("lumi_user_id", newUserId);
     localStorage.setItem("lumi_access_token", newAccessToken);
     localStorage.setItem("lumi_user_name", name);
-    const today = getTodayUtcDateString();
+    const today = getTodayLocalDateString();
     setLastResetDate(today);
     localStorage.setItem("lumi_last_reset_date", today);
   };
@@ -186,7 +185,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     });
     setDailyHistory([]);
     setStreakData(null);
-    setLastResetDate(getTodayUtcDateString());
+    setLastResetDate(getTodayLocalDateString());
     
     // Clear localStorage
     localStorage.removeItem("lumi_user_id");
@@ -328,10 +327,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
     loadUserProfile(userId, accessToken);
   }, [userId, accessToken]);
 
-  // Midnight-based UI reset: clear daily UI state when calendar day changes (UTC)
+  // Midnight-based UI reset: clear daily UI state when calendar day changes locally
   useEffect(() => {
     const resetDailyUi = () => {
-      const today = getTodayUtcDateString();
+      const today = getTodayLocalDateString();
       if (today !== lastResetDate) {
         debugLog('UserContext', 'Midnight reset triggered', { lastResetDate, today });
         setWaterGlasses(0);
@@ -403,6 +402,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${accessToken}`,
+            ...buildDateHeaders(),
           },
           body: JSON.stringify({
             profile: newProfile,
@@ -429,6 +429,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     }
 
     try {
+      const clientDate = getTodayLocalDateString();
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-7e221a31/hydration/${userId}`,
         {
@@ -436,8 +437,9 @@ export function UserProvider({ children }: { children: ReactNode }) {
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${accessToken}`,
+            ...buildDateHeaders(),
           },
-          body: JSON.stringify({ glasses }),
+          body: JSON.stringify({ glasses, date: clientDate }),
         }
       );
 
@@ -467,6 +469,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
     }));
 
     try {
+      const clientDate = getTodayLocalDateString();
       const response = await fetch(
         `https://${projectId}.supabase.co/functions/v1/make-server-7e221a31/nutrition/${userId}`,
         {
@@ -474,8 +477,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
           headers: {
             "Content-Type": "application/json",
             Authorization: `Bearer ${accessToken}`,
+            ...buildDateHeaders(),
           },
           body: JSON.stringify({
+            date: clientDate,
             meal: {
               type: meal,
               protein: intake.protein,
@@ -514,12 +519,14 @@ export function UserProvider({ children }: { children: ReactNode }) {
     console.log("refreshData: Starting data refresh for user", userId);
 
     try {
+      const clientDate = getTodayLocalDateString();
       // Get today's summary (includes streak data)
       const summaryResponse = await fetch(
-        `https://${projectId}.supabase.co/functions/v1/make-server-7e221a31/summary/${userId}`,
+        `https://${projectId}.supabase.co/functions/v1/make-server-7e221a31/summary/${userId}?date=${clientDate}`,
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
+            ...buildDateHeaders(),
           },
         }
       );
@@ -568,6 +575,7 @@ export function UserProvider({ children }: { children: ReactNode }) {
         {
           headers: {
             Authorization: `Bearer ${accessToken}`,
+            ...buildDateHeaders(),
           },
         }
       );
