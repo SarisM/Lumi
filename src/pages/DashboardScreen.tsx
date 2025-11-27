@@ -100,10 +100,10 @@ export function DashboardScreen() {
 
   const handleAddWater = async () => {
     setIsAddingWater(true);
-    await addWater(1);
+    const success = await addWater(1);
     
-    // Log hydration event
-    if (userId && accessToken) {
+    // Log hydration event only if the backend confirmed success
+    if (success && userId && accessToken) {
       await logUserEvent(userId, accessToken, "hydration_logged", {
         glasses: 1,
         totalGlasses: waterGlasses + 1,
@@ -111,6 +111,8 @@ export function DashboardScreen() {
           ? Math.round(((waterGlasses + 1) / nutritionalNeeds.dailyWater) * 100)
           : 0,
       });
+    } else if (!success) {
+      console.error("Hydration register failed - event not logged");
     }
     
     setTimeout(() => setIsAddingWater(false), 300);

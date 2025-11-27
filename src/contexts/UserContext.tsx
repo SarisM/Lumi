@@ -58,7 +58,7 @@ interface UserContextType {
   updateMealIntake: (meal: "breakfast" | "lunch" | "dinner", intake: MealIntake) => Promise<void>;
   getTotalIntake: () => { protein: number; fiber: number };
   waterGlasses: number;
-  addWater: (glasses?: number) => Promise<void>;
+  addWater: (glasses?: number) => Promise<boolean>;
   dailyHistory: DailyProgress[];
   streakData: StreakData | null;
   checkAndUpdateDailyProgress: () => void;
@@ -422,10 +422,10 @@ export function UserProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const addWater = async (glasses: number = 1) => {
+  const addWater = async (glasses: number = 1): Promise<boolean> => {
     if (!userId || !accessToken) {
       console.error("No userId or accessToken available");
-      return;
+      return false;
     }
 
     try {
@@ -446,14 +446,16 @@ export function UserProvider({ children }: { children: ReactNode }) {
       if (!response.ok) {
         const errorText = await response.text();
         debugError('UserContext', 'Failed to add water:', errorText);
-        throw new Error("Failed to add water");
+        return false;
       }
 
       const data = await response.json();
       setWaterGlasses(data.waterGlasses);
       debugLog('UserContext', 'Water added successfully:', data.waterGlasses);
+      return true;
     } catch (error) {
       debugError('UserContext', 'Error adding water:', error);
+      return false;
     }
   };
 
